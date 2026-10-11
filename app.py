@@ -1,775 +1,218 @@
-
 import io
-from pathlib import Path
-
+import os
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import streamlit as st
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
+import plotly.express as px
 from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.decomposition import PCA
 
+st.set_page_config(page_title="CustomerInsight CL02", page_icon="💜", layout="wide")
 
-# -------------------------------
-# ตั้งค่าหน้าเว็บไซต์
-# -------------------------------
-st.set_page_config(
-    page_title="CustomerInsight CL02",
-    page_icon="📊",
-    layout="wide"
-)
-
-# -------------------------------
-# ธีมน้ำเงิน-ขาว
-# -------------------------------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'Prompt', sans-serif;
-}
-
-.stApp {
-    background: #F5F8FC;
-    color: #26384A;
-}
-
-section[data-testid="stSidebar"] {
-    background: #EAF1F9;
-    border-right: 1px solid #D8E3F0;
-}
-
-.header-box {
-    background: white;
-    border: 1px solid #DCE6F1;
-    border-left: 6px solid #245B91;
-    border-radius: 14px;
-    padding: 24px;
-    margin-bottom: 20px;
-}
-
-.header-box h1 {
-    color: #173B63;
-    margin: 0;
-    font-size: 2rem;
-}
-
-.header-box p {
-    color: #60758C;
-    margin: 8px 0 0 0;
-}
-
-div[data-testid="stMetric"] {
-    background: white;
-    border: 1px solid #DCE6F1;
-    border-radius: 12px;
-    padding: 16px;
-}
-
-div[data-testid="stMetricValue"] {
-    color: #245B91;
-    font-weight: 700;
-}
-
-h1, h2, h3 {
-    color: #173B63;
-}
-
-.stButton > button,
-.stDownloadButton > button {
-    background: #245B91;
-    color: white;
-    border-radius: 8px;
-    border: 1px solid #245B91;
-    font-weight: 500;
-}
-
-.stButton > button:hover,
-.stDownloadButton > button:hover {
-    background: #174675;
-    color: white;
-    border-color: #174675;
-}
-
-div[data-testid="stDataFrame"] {
-    border: 1px solid #DCE6F1;
-    border-radius: 10px;
-    overflow: hidden;
-}
-
-hr {
-    border-color: #DCE6F1;
-}
+html, body, [class*="css"] {font-family:'Prompt',sans-serif;}
+.stApp {background:linear-gradient(135deg,#fbf8ff 0%,#f4f3ff 55%,#fff7fc 100%);}
+section[data-testid="stSidebar"] {background:linear-gradient(180deg,#eee9ff,#fff0f8);}
+.hero {padding:26px 30px;border-radius:24px;background:linear-gradient(115deg,#f6dcff,#e1e8ff 55%,#dcfff1);border:1px solid #e7ddff;margin-bottom:18px;}
+.hero h1 {color:#29205f;font-size:2.1rem;margin:0;}
+.hero p {color:#5b5383;margin:.4rem 0 0;}
+div[data-testid="stMetric"] {background:#ffffffd9;border:1px solid #e9e2fa;padding:16px;border-radius:18px;}
+h2,h3 {color:#33246f;}
+.stButton>button,.stDownloadButton>button {border:0;border-radius:12px;background:linear-gradient(90deg,#8065dc,#d16bb5);color:white;font-weight:600;}
 </style>
 """, unsafe_allow_html=True)
 
-
-BLUE_PALETTE = [
-    "#245B91",
-    "#4F83B8",
-    "#77A5D0",
-    "#9DBDDA",
-    "#173B63",
-    "#6C99C2",
-    "#8BAFCF",
-    "#B5CCE2"
+FEATURES_DEFAULT = [
+    "age", "monthly_spend", "visits_month", "avg_items",
+    "discount_usage_percent", "online_orders_month"
 ]
+DEFAULT_FILE = os.path.join(os.path.dirname(__file__), "CL02_customer_behavior_clustering.xlsx")
 
-DEFAULT_FILE = (
-    Path(__file__).parent
-    / "CL02_customer_behavior_clustering.xlsx"
-)
+st.sidebar.markdown("## 💜 CustomerInsight")
+st.sidebar.caption("CL02 · Customer Behavior Clustering")
+page = st.sidebar.radio("เมนู", ["🏠 ภาพรวม", "🧹 Data Cleaning", "📊 Clustering", "🔎 Cluster Profile", "⬇️ ดาวน์โหลดผลลัพธ์"])
+st.sidebar.markdown("---")
+st.sidebar.caption("Pastel purple · pink · mint")
 
-PREFERRED_FEATURES = [
-    "age",
-    "monthly_spend",
-    "visits_month",
-    "avg_items",
-    "discount_usage_percent",
-    "online_orders_month"
-]
-
-
-# -------------------------------
-# เมนูด้านข้าง
-# -------------------------------
-st.sidebar.markdown("## 📊 CustomerInsight")
-st.sidebar.caption("CL02 | Customer Behavior Clustering")
-
-page = st.sidebar.radio(
-    "เมนูหลัก",
-    [
-        "ภาพรวม",
-        "ตรวจสอบข้อมูล",
-        "วิเคราะห์ Clustering",
-        "เปรียบเทียบกลุ่มลูกค้า",
-        "ดาวน์โหลดผลลัพธ์"
-    ]
-)
-
-st.sidebar.divider()
-st.sidebar.caption("Customer Behavior Analysis")
-
-
-# -------------------------------
-# ส่วนหัวเว็บไซต์
-# -------------------------------
 st.markdown("""
-<div class="header-box">
-    <h1>CustomerInsight</h1>
-    <p>
-        CL02 | วิเคราะห์พฤติกรรมลูกค้า
-        เพื่อช่วยให้เข้าใจรูปแบบการซื้อและวางแผนธุรกิจ
-    </p>
+<div class="hero">
+  <h1>CustomerInsight ✨</h1>
+  <p>Customer Behavior Clustering Dashboard</p>
+  <p>สำรวจคุณภาพข้อมูล แบ่งกลุ่มลูกค้า และดู Insight จากข้อมูลจริง</p>
 </div>
 """, unsafe_allow_html=True)
 
-
-# -------------------------------
-# โหลด Dataset
-# -------------------------------
-with st.expander("📁 เลือก Dataset", expanded=not DEFAULT_FILE.exists()):
-
-    uploaded_file = st.file_uploader(
-        "อัปโหลดไฟล์ Excel (.xlsx)",
-        type=["xlsx"]
-    )
-
-    raw = None
-    source_name = ""
-
-    try:
-        if uploaded_file is not None:
-
-            excel = pd.ExcelFile(
-                io.BytesIO(uploaded_file.getvalue())
-            )
-
-            sheet_name = (
-                "Raw_Data"
-                if "Raw_Data" in excel.sheet_names
-                else excel.sheet_names[0]
-            )
-
-            raw = pd.read_excel(
-                io.BytesIO(uploaded_file.getvalue()),
-                sheet_name=sheet_name
-            )
-
-            source_name = uploaded_file.name
-
-        elif DEFAULT_FILE.exists():
-
-            excel = pd.ExcelFile(DEFAULT_FILE)
-
-            sheet_name = (
-                "Raw_Data"
-                if "Raw_Data" in excel.sheet_names
-                else excel.sheet_names[0]
-            )
-
-            raw = pd.read_excel(
-                DEFAULT_FILE,
-                sheet_name=sheet_name
-            )
-
-            source_name = DEFAULT_FILE.name
-
-    except Exception as error:
-        st.error(f"ไม่สามารถอ่านไฟล์ได้: {error}")
-
+with st.expander("📂 เลือก Dataset (Excel)", expanded=not os.path.exists(DEFAULT_FILE)):
+    uploaded = st.file_uploader("อัปโหลดไฟล์ CL02 (.xlsx)", type=["xlsx"])
+    if uploaded:
+        source_bytes = uploaded.getvalue()
+        try:
+            excel = pd.ExcelFile(io.BytesIO(source_bytes))
+            sheet = "Raw_Data" if "Raw_Data" in excel.sheet_names else excel.sheet_names[0]
+            raw = pd.read_excel(io.BytesIO(source_bytes), sheet_name=sheet)
+            source_name = uploaded.name
+        except Exception as e:
+            st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
+            st.stop()
+    elif os.path.exists(DEFAULT_FILE):
+        source_bytes = open(DEFAULT_FILE, "rb").read()
+        excel = pd.ExcelFile(io.BytesIO(source_bytes))
+        sheet = "Raw_Data" if "Raw_Data" in excel.sheet_names else excel.sheet_names[0]
+        raw = pd.read_excel(io.BytesIO(source_bytes), sheet_name=sheet)
+        source_name = os.path.basename(DEFAULT_FILE)
+    else:
+        raw = None
 
 if raw is None:
-    st.info("กรุณาอัปโหลดไฟล์ Dataset เพื่อเริ่มวิเคราะห์")
+    st.info("อัปโหลดไฟล์ CL02_customer_behavior_clustering.xlsx เพื่อเริ่มใช้งาน")
     st.stop()
 
-
-# -------------------------------
-# ตรวจสอบคอลัมน์
-# -------------------------------
 raw.columns = [str(c).strip() for c in raw.columns]
-
-id_col = next(
-    (
-        c for c in raw.columns
-        if c.lower() in ["customer_id", "customerid", "id"]
-    ),
-    None
-)
-
-features = [
-    c for c in PREFERRED_FEATURES
-    if c in raw.columns
-]
-
+id_col = "customer_id" if "customer_id" in raw.columns else None
+features = [c for c in FEATURES_DEFAULT if c in raw.columns]
 if len(features) < 2:
-    features = [
-        c for c in raw.select_dtypes(include=np.number).columns
-        if c != id_col
-    ]
-
+    features = [c for c in raw.select_dtypes(include=np.number).columns if c != id_col]
 if len(features) < 2:
-    st.error(
-        "Dataset ต้องมีคอลัมน์ตัวเลขอย่างน้อย 2 คอลัมน์"
-    )
-    st.write("คอลัมน์ที่พบ:", raw.columns.tolist())
+    st.error("Dataset ต้องมี Feature ตัวเลขอย่างน้อย 2 คอลัมน์")
     st.stop()
 
-
-# -------------------------------
-# Data Cleaning
-# -------------------------------
 rows_before = len(raw)
-duplicate_count = int(raw.duplicated().sum())
-
-missing_count = int(
-    raw[features].isna().sum().sum()
-)
+duplicates = int(raw.duplicated().sum())
+missing_before = int(raw[features].isna().sum().sum())
 
 clean = raw.drop_duplicates().copy()
-
 for col in features:
+    clean[col] = pd.to_numeric(clean[col], errors="coerce")
+    clean[col] = clean[col].fillna(clean[col].median())
 
-    clean[col] = pd.to_numeric(
-        clean[col],
-        errors="coerce"
-    )
-
-    median_value = clean[col].median()
-
-    clean[col] = clean[col].fillna(median_value)
-
-
-if len(clean) < 3:
-    st.error("ข้อมูลมีน้อยเกินไปสำหรับการแบ่งกลุ่ม")
-    st.stop()
-
-
-# -------------------------------
-# ตั้งค่าการวิเคราะห์
-# -------------------------------
-st.sidebar.markdown("### ⚙️ ตั้งค่าการวิเคราะห์")
-
-max_k = min(8, len(clean) - 1)
-
-k = st.sidebar.slider(
-    "จำนวนกลุ่มลูกค้า (K)",
-    min_value=2,
-    max_value=max_k,
-    value=min(3, max_k)
-)
-
-selected_features = st.sidebar.multiselect(
-    "ตัวแปรที่ใช้วิเคราะห์",
-    features,
-    default=features
-)
-
+# Use a stable scaler and cluster on selected numeric behavior features.
+with st.sidebar:
+    st.markdown("### ⚙️ ตั้งค่ากลุ่ม")
+    k = st.slider("จำนวน Cluster (K)", min_value=2, max_value=8, value=3)
+    selected_features = st.multiselect("Features ที่ใช้", features, default=features)
 if len(selected_features) < 2:
-    st.warning("กรุณาเลือกตัวแปรอย่างน้อย 2 รายการ")
+    st.warning("เลือก Feature อย่างน้อย 2 ตัวเพื่อทำ Clustering")
     st.stop()
 
-
-# -------------------------------
-# เตรียมข้อมูลสำหรับ K-Means
-# -------------------------------
 X = clean[selected_features].copy()
-
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
-
-model = KMeans(
-    n_clusters=k,
-    random_state=42,
-    n_init=10
-)
-
+model = KMeans(n_clusters=k, random_state=42, n_init=10)
 labels = model.fit_predict(X_scaled)
 clean["Cluster"] = labels
+sil = silhouette_score(X_scaled, labels) if len(clean) > k and len(np.unique(labels)) > 1 else float("nan")
 
-if len(np.unique(labels)) > 1 and len(clean) > k:
-    score = silhouette_score(X_scaled, labels)
-else:
-    score = float("nan")
-
-
-# -------------------------------
-# ประเมินค่า K
-# -------------------------------
-evaluation_rows = []
-
-for candidate_k in range(2, max_k + 1):
-
-    candidate_model = KMeans(
-        n_clusters=candidate_k,
-        random_state=42,
-        n_init=10
-    )
-
-    candidate_labels = candidate_model.fit_predict(
-        X_scaled
-    )
-
-    evaluation_rows.append({
-        "K": candidate_k,
-        "Inertia": candidate_model.inertia_,
-        "Silhouette Score": silhouette_score(
-            X_scaled,
-            candidate_labels
-        )
+# K evaluation
+k_values = list(range(2, min(8, len(clean)-1) + 1))
+eval_rows = []
+for kk in k_values:
+    km = KMeans(n_clusters=kk, random_state=42, n_init=10)
+    labs = km.fit_predict(X_scaled)
+    eval_rows.append({
+        "K": kk,
+        "Inertia": float(km.inertia_),
+        "Silhouette Score": float(silhouette_score(X_scaled, labs))
     })
+evaluation = pd.DataFrame(eval_rows)
+profile = clean.groupby("Cluster")[selected_features].mean().round(2)
+counts = clean["Cluster"].value_counts().sort_index()
 
-evaluation = pd.DataFrame(evaluation_rows)
-
-cluster_counts = (
-    clean["Cluster"]
-    .value_counts()
-    .sort_index()
-)
-
-cluster_profile = (
-    clean.groupby("Cluster")[selected_features]
-    .mean()
-    .round(2)
-)
-
-
-# -------------------------------
-# หน้า 1: ภาพรวม
-# -------------------------------
-if page == "ภาพรวม":
-
-    st.subheader("ภาพรวมข้อมูลลูกค้า")
-
-    st.write(
-        "สรุปข้อมูลเบื้องต้นและจำนวนลูกค้าในแต่ละกลุ่ม"
-    )
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric(
-        "ข้อมูลหลัง Clean",
-        f"{len(clean):,} แถว"
-    )
-
-    col2.metric(
-        "จำนวน Features",
-        len(selected_features)
-    )
-
-    col3.metric(
-        "จำนวน Cluster",
-        k
-    )
-
-    col4.metric(
-        "Silhouette Score",
-        f"{score:.3f}" if np.isfinite(score) else "N/A"
-    )
-
-    left, right = st.columns([1.2, 1])
-
+if page == "🏠 ภาพรวม":
+    st.subheader("สวัสดี ยินดีต้อนรับสู่ CustomerInsight 💗")
+    st.write("แดชบอร์ดสำหรับวิเคราะห์พฤติกรรมลูกค้าด้วย K-Means เลือกค่า K และ Feature ได้จากแถบด้านซ้าย")
+    a,b,c,d = st.columns(4)
+    a.metric("👥 Records หลัง Clean", f"{len(clean):,}")
+    b.metric("🧩 Features", len(selected_features))
+    c.metric("🎯 จำนวนกลุ่ม K", k)
+    d.metric("📐 Silhouette Score", f"{sil:.3f}")
+    left,right = st.columns([1.2,1])
     with left:
-
-        st.markdown("### จำนวนลูกค้าแต่ละกลุ่ม")
-
-        count_df = (
-            cluster_counts
-            .rename_axis("Cluster")
-            .reset_index(name="จำนวนลูกค้า")
-        )
-
-        fig = px.bar(
-            count_df,
-            x="Cluster",
-            y="จำนวนลูกค้า",
-            color="Cluster",
-            color_discrete_sequence=BLUE_PALETTE,
-            labels={
-                "Cluster": "กลุ่มลูกค้า",
-                "จำนวนลูกค้า": "จำนวนคน"
-            }
-        )
-
-        fig.update_layout(
-            showlegend=False,
-            plot_bgcolor="white",
-            paper_bgcolor="white"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
+        st.markdown("### จำนวนลูกค้าในแต่ละ Cluster")
+        plot_df = counts.rename_axis("Cluster").reset_index(name="จำนวนลูกค้า")
+        fig = px.bar(plot_df, x="Cluster", y="จำนวนลูกค้า", color="Cluster",
+                     color_discrete_sequence=["#8b7cf6","#f28ac2","#5bcfa8","#ffc66d","#9b8af7","#70a7f9","#ed79a7","#55c5c0"])
+        fig.update_layout(showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
     with right:
-
-        st.markdown("### ข้อมูลต้นทาง")
-
+        st.markdown("### ข้อมูลที่ตรวจพบ")
         st.write(f"**ไฟล์:** {source_name}")
-        st.write(f"**ชีต:** {sheet_name}")
-        st.write(f"**แถวก่อน Clean:** {rows_before:,}")
-        st.write(f"**แถวซ้ำ:** {duplicate_count:,}")
-        st.write(f"**ค่าว่างใน Features:** {missing_count:,}")
+        st.write(f"**ชีต:** {sheet}")
+        st.write(f"**จำนวนแถวก่อน Clean:** {rows_before:,}")
+        st.write(f"**แถวซ้ำทั้งแถว:** {duplicates:,}")
+        st.write(f"**Missing ใน Features ก่อน Clean:** {missing_before:,}")
+        st.info("ระบบลบแถวซ้ำทั้งแถว และเติม Missing ใน Features ด้วย Median ส่วน Outlier จะแสดงให้ตรวจสอบ ไม่ลบอัตโนมัติ")
 
-        st.info(
-            "ระบบลบแถวที่ซ้ำกันทุกคอลัมน์ "
-            "และเติมค่าว่างของตัวแปรตัวเลขด้วย Median "
-            "ส่วน Outlier จะตรวจสอบแยกต่างหาก"
-        )
+elif page == "🧹 Data Cleaning":
+    st.subheader("ตรวจสอบและเตรียมข้อมูล 🧹")
+    a,b,c = st.columns(3)
+    a.metric("Rows ก่อน Clean", f"{rows_before:,}")
+    b.metric("Duplicate rows", f"{duplicates:,}")
+    c.metric("Missing ใน Features ก่อน Clean", f"{missing_before:,}")
+    st.markdown("#### Missing Values รายคอลัมน์")
+    st.dataframe(raw.isna().sum().rename("Missing Values").rename_axis("Column").reset_index(), use_container_width=True, hide_index=True)
+    st.markdown("#### สถิติหลัง Clean")
+    st.dataframe(clean[selected_features].describe().T.round(2), use_container_width=True)
+    chosen = st.selectbox("เลือก Feature เพื่อดู Outlier", selected_features)
+    fig = px.box(clean, y=chosen, points="outliers", title=f"Boxplot: {chosen}",
+                 color_discrete_sequence=["#9b7cf6"])
+    fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("จุดนอก whiskers เป็นค่าที่ควรตรวจสอบ ไม่ได้หมายความว่าต้องลบทิ้งเสมอไป")
 
-    st.markdown("### ตัวอย่างข้อมูล")
-
-    st.dataframe(
-        clean.head(10),
-        use_container_width=True,
-        hide_index=True
-    )
-
-
-# -------------------------------
-# หน้า 2: ตรวจสอบข้อมูล
-# -------------------------------
-elif page == "ตรวจสอบข้อมูล":
-
-    st.subheader("ตรวจสอบและทำความสะอาดข้อมูล")
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("จำนวนแถวเดิม", f"{rows_before:,}")
-    col2.metric("แถวซ้ำ", f"{duplicate_count:,}")
-    col3.metric("ค่าว่าง", f"{missing_count:,}")
-
-    st.markdown("### ค่าว่างแยกตามคอลัมน์")
-
-    missing_table = (
-        raw.isna()
-        .sum()
-        .rename("จำนวนค่าว่าง")
-        .rename_axis("คอลัมน์")
-        .reset_index()
-    )
-
-    st.dataframe(
-        missing_table,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.markdown("### สถิติหลัง Clean")
-
-    st.dataframe(
-        clean[selected_features].describe().T.round(2),
-        use_container_width=True
-    )
-
-    selected_box = st.selectbox(
-        "เลือกตัวแปรเพื่อตรวจสอบ Outlier",
-        selected_features
-    )
-
-    fig = px.box(
-        clean,
-        y=selected_box,
-        points="outliers",
-        title=f"การกระจายของ {selected_box}",
-        color_discrete_sequence=["#3979B8"]
-    )
-
-    fig.update_layout(
-        plot_bgcolor="white",
-        paper_bgcolor="white"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-    st.caption(
-        "จุดที่อยู่นอกช่วงกล่องเป็นค่าที่ควรตรวจสอบ "
-        "แต่ไม่จำเป็นต้องลบทิ้งทุกกรณี"
-    )
-
-
-# -------------------------------
-# หน้า 3: Clustering
-# -------------------------------
-elif page == "วิเคราะห์ Clustering":
-
-    st.subheader("วิเคราะห์และเลือกจำนวนกลุ่ม")
-
-    st.write(
-        "ใช้กราฟ Elbow และ Silhouette Score "
-        "ช่วยพิจารณาจำนวนกลุ่มที่เหมาะสม"
-    )
-
-    left, right = st.columns(2)
-
-    with left:
-
-        fig = px.line(
-            evaluation,
-            x="K",
-            y="Inertia",
-            markers=True,
-            title="Elbow Method",
-            color_discrete_sequence=["#245B91"]
-        )
-
-        fig.update_layout(
-            plot_bgcolor="white",
-            paper_bgcolor="white"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    with right:
-
-        fig = px.line(
-            evaluation,
-            x="K",
-            y="Silhouette Score",
-            markers=True,
-            title="Silhouette Score",
-            color_discrete_sequence=["#4F83B8"]
-        )
-
-        fig.update_layout(
-            plot_bgcolor="white",
-            paper_bgcolor="white"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    st.markdown("### ตารางเปรียบเทียบค่า K")
-
-    st.dataframe(
-        evaluation.round(4),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    if not evaluation.empty:
-
-        best_row = evaluation.loc[
-            evaluation["Silhouette Score"].idxmax()
-        ]
-
-        st.info(
-            f"ค่า Silhouette Score สูงสุดในช่วงที่ทดลองคือ "
-            f"K = {int(best_row['K'])} "
-            f"(คะแนน {best_row['Silhouette Score']:.3f}) "
-            "ควรดูกราฟ Elbow และความหมายของแต่ละกลุ่มประกอบ"
-        )
-
-    st.markdown("### ภาพรวมกลุ่มลูกค้า")
-
+elif page == "📊 Clustering":
+    st.subheader("เลือกจำนวนกลุ่มด้วย Elbow และ Silhouette 📊")
+    l,r = st.columns(2)
+    with l:
+        fig = px.line(evaluation, x="K", y="Inertia", markers=True, title="Elbow Method",
+                      color_discrete_sequence=["#8370e8"])
+        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+    with r:
+        fig = px.line(evaluation, x="K", y="Silhouette Score", markers=True, title="Silhouette Score",
+                      color_discrete_sequence=["#e879b9"])
+        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(evaluation.round(4), use_container_width=True, hide_index=True)
+    best_k = int(evaluation.loc[evaluation["Silhouette Score"].idxmax(), "K"])
+    st.success(f"K ที่ได้ Silhouette Score สูงสุดในช่วงที่ทดลองคือ {best_k} — ควรพิจารณาร่วมกับ Elbow และความหมายของกลุ่มด้วย")
+    st.markdown("#### แสดงกลุ่มใน 2 มิติด้วย PCA")
     pca = PCA(n_components=2, random_state=42)
-    coordinates = pca.fit_transform(X_scaled)
+    coords = pca.fit_transform(X_scaled)
+    pca_df = pd.DataFrame({"PC1": coords[:,0], "PC2": coords[:,1], "Cluster": labels.astype(str)})
+    fig = px.scatter(pca_df, x="PC1", y="PC2", color="Cluster", opacity=.72,
+                     color_discrete_sequence=["#8370e8","#ef83bf","#55cfa5","#ffc66d","#8aa8ff","#f28b82","#6fc8df","#ba8cf4"])
+    fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(f"PCA 2D แสดงความแปรปรวนรวม {pca.explained_variance_ratio_.sum()*100:.1f}% ของข้อมูล")
 
-    pca_df = pd.DataFrame({
-        "แกนที่ 1": coordinates[:, 0],
-        "แกนที่ 2": coordinates[:, 1],
-        "Cluster": labels.astype(str)
-    })
+elif page == "🔎 Cluster Profile":
+    st.subheader("พฤติกรรมเฉลี่ยของแต่ละกลุ่ม 🔎")
+    st.dataframe(profile, use_container_width=True)
+    feature = st.selectbox("เลือก Feature เพื่อเปรียบเทียบค่าเฉลี่ย", selected_features)
+    prof = profile[feature].rename("ค่าเฉลี่ย").reset_index()
+    fig = px.bar(prof, x="Cluster", y="ค่าเฉลี่ย", color="Cluster",
+                 color_discrete_sequence=["#8370e8","#ef83bf","#55cfa5","#ffc66d","#8aa8ff","#f28b82","#6fc8df","#ba8cf4"])
+    fig.update_layout(showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig, use_container_width=True)
+    st.info("ตั้งชื่อกลุ่มจากค่าจริงในตาราง เช่น กลุ่มใช้จ่ายสูง หรือกลุ่มซื้อออนไลน์บ่อย หลีกเลี่ยงการสรุปก่อนดูผล")
+    st.markdown("#### ตัวอย่างแถวข้อมูลพร้อม Cluster")
+    st.dataframe(clean.head(30), use_container_width=True, hide_index=True)
 
-    fig = px.scatter(
-        pca_df,
-        x="แกนที่ 1",
-        y="แกนที่ 2",
-        color="Cluster",
-        opacity=0.75,
-        color_discrete_sequence=BLUE_PALETTE
-    )
-
-    fig.update_layout(
-        plot_bgcolor="white",
-        paper_bgcolor="white"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-    st.caption(
-        "PCA ย่อข้อมูลหลายตัวแปรให้เหลือ 2 มิติ "
-        "เพื่อช่วยมองภาพรวมของกลุ่ม"
-    )
-
-
-# -------------------------------
-# หน้า 4: เปรียบเทียบกลุ่ม
-# -------------------------------
-elif page == "เปรียบเทียบกลุ่มลูกค้า":
-
-    st.subheader("เปรียบเทียบพฤติกรรมลูกค้า")
-
-    st.write(
-        "ใช้ค่าเฉลี่ยของแต่ละตัวแปรเพื่ออธิบายความแตกต่าง "
-        "ระหว่างกลุ่มลูกค้า"
-    )
-
-    st.dataframe(
-        cluster_profile,
-        use_container_width=True
-    )
-
-    selected_feature = st.selectbox(
-        "เลือกตัวแปรที่ต้องการเปรียบเทียบ",
-        selected_features
-    )
-
-    profile_df = (
-        cluster_profile[selected_feature]
-        .rename("ค่าเฉลี่ย")
-        .reset_index()
-    )
-
-    fig = px.bar(
-        profile_df,
-        x="Cluster",
-        y="ค่าเฉลี่ย",
-        color="Cluster",
-        color_discrete_sequence=BLUE_PALETTE
-    )
-
-    fig.update_layout(
-        showlegend=False,
-        plot_bgcolor="white",
-        paper_bgcolor="white"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-    st.markdown("### ตัวอย่างข้อมูลพร้อม Cluster")
-
-    st.dataframe(
-        clean.head(30),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.caption(
-        "หมายเลข Cluster เป็นเพียงป้ายกำกับกลุ่ม "
-        "ไม่ได้บอกว่ากลุ่มใดดีกว่ากลุ่มอื่น"
-    )
-
-
-# -------------------------------
-# หน้า 5: ดาวน์โหลดผลลัพธ์
-# -------------------------------
-elif page == "ดาวน์โหลดผลลัพธ์":
-
-    st.subheader("ดาวน์โหลดผลการวิเคราะห์")
-
-    st.write(
-        "ดาวน์โหลดข้อมูลที่ติดป้าย Cluster แล้ว "
-        "พร้อมตารางสรุปและผลการทดลองค่า K"
-    )
-
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(
-        output,
-        engine="openpyxl"
-    ) as writer:
-
-        clean.to_excel(
-            writer,
-            index=False,
-            sheet_name="Cluster_Result"
-        )
-
-        cluster_profile.to_excel(
-            writer,
-            sheet_name="Cluster_Profile"
-        )
-
-        evaluation.round(4).to_excel(
-            writer,
-            index=False,
-            sheet_name="K_Evaluation"
-        )
-
-    st.download_button(
-        label="📥 ดาวน์โหลดผลลัพธ์ Excel",
-        data=output.getvalue(),
+elif page == "⬇️ ดาวน์โหลดผลลัพธ์":
+    st.subheader("ดาวน์โหลดผลลัพธ์ 📥")
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        clean.to_excel(writer, index=False, sheet_name="Cluster_Result")
+        profile.to_excel(writer, sheet_name="Cluster_Profile")
+        evaluation.round(4).to_excel(writer, index=False, sheet_name="K_Evaluation")
+    st.download_button("💜 ดาวน์โหลด Excel ผลการวิเคราะห์", data=buffer.getvalue(),
         file_name="CL02_customer_behavior_clustering_result.xlsx",
-        mime=(
-            "application/vnd.openxmlformats-officedocument."
-            "spreadsheetml.sheet"
-        )
-    )
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.dataframe(clean.head(20), use_container_width=True, hide_index=True)
 
-    st.markdown("### ตัวอย่างผลลัพธ์")
-
-    st.dataframe(
-        clean.head(20),
-        use_container_width=True,
-        hide_index=True
-    )
-
-
-# -------------------------------
-# ท้ายเว็บไซต์
-# -------------------------------
-st.divider()
-
-st.caption(
-    "CustomerInsight CL02 | เครื่องมือประกอบการเรียนรู้ "
-    "และวิเคราะห์พฤติกรรมลูกค้าด้วย K-Means"
-)
+st.markdown("---")
+st.caption("💜 CustomerInsight CL02 · ผลลัพธ์คำนวณจาก Dataset ที่เลือก · ตรวจสอบค่า K และวิธี Clean ก่อนนำเสนอ")
